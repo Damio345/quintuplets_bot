@@ -1,17 +1,29 @@
+import os
+import sys
+import threading
 import telebot
 import requests
+from flask import Flask
 
 # ==========================================
-# ШАГ 1: ВСТАВЬ СЮДА СВОИ ДАННЫЕ
+# НАСТРОЙКИ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ RENDER
 # ==========================================
-BOT_TOKEN = "9202865214:AAGBXvlkJ50mRXSRkhvi_CdX0Iuwf-Gl0uU"  # Например: 123456789:AAF...
-API_KEY = "sk-nplvfcwayjwuiapnhvlfzqamxaltuseccbplnarhiotlsrac"         # Например: gsk_...
-API_URL = "https://api.groq.com/openai/v1/chat/completions"
-# ==========================================
+BOT_TOKEN = os.environ.get("9202865214:AAGBXvlkJ50mRXSRkhvi_CdX0Iuwf-Gl0uU")
+API_KEY = os.environ.get("sk-nplvfcwayjwuiapnhvlfzqamxaltuseccbplnarhiotlsrac")  # Ключ от Groq или OpenRouter
+API_URL = os.environ.get("API_URL", "https://api.groq.com/openai/v1/chat/completions")
+MODEL = os.environ.get("MODEL", "llama3-8b-8192")
+PORT = int(os.environ.get("PORT", 8000))
 
-# Промпт, который запрещает звёздочки и заставляет писать как живой человек
+# Проверка ключей
+if not BOT_TOKEN or not API_KEY:
+    print("❌ ОШИБКА: BOT_TOKEN и API_KEY должны быть заданы в Environment Variables на Render!")
+    sys.exit(1)
+
+# ==========================================
+# ПРОМПТ МИКУ
+# ==========================================
 SYSTEM_PROMPT = """
-Ты — Мику Накано. Ты переписываешься в Telegram со своим другом Д良илем (14 лет).
+Ты — Мику Накано. Ты переписываешься в Telegram со своим другом Дамилем (14 лет).
 ПРАВИЛА:
 1. Пиши как обычный человек в мессенджере. Короткие сообщения, строчные буквы.
 2. ЗАПРЕЩЕНО использовать звёздочки (*), описания действий, кавычки вокруг реплик.
@@ -22,18 +34,32 @@ SYSTEM_PROMPT = """
 7. Никогда не ломай четвёртую стену и не говори, что ты ИИ.
 """
 
-# Хранилище истории переписки для каждого пользователя
+# Хранилище истории диалогов
 chat_histories = {}
 
+# ==========================================
+# ФЛАКС-СЕРВЕР ДЛЯ RENDER (health-check)
+# ==========================================
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "мику бот жив 🎧"
+
+@app.route("/health")
+def health():
+    return "ok"
+
+# ==========================================
+# ЛОГИКА БОТА
+# ==========================================
 def get_ai_response(user_id, user_message):
-    # Если пользователь пишет впервые, создаем для него историю с системным промптом
     if user_id not in chat_histories:
         chat_histories[user_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-    # Добавляем сообщение пользователя
     chat_histories[user_id].append({"role": "user", "content": user_message})
 
-    # Ограничиваем историю, чтобы не переполнять память (системный промпт + последние 10 сообщений)
+    # Ограничиваем историю (системный промпт + последние 10 сообщений)
     if len(chat_histories[user_id]) > 12:
         chat_histories[user_id] = [chat_histories[user_id][0]] + chat_histories[user_id][-10:]
 
@@ -41,46 +67,48 @@ def get_ai_response(user_id, user_message):
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json"
     }
-    
+
     payload = {
-        "model": "llama3-8b-8192", # Быстрая и бесплатная модель на Groq
+        "model": MODEL,
         "messages": chat_histories[user_id],
         "temperature": 0.7
     }
 
     try:
-        response = requests.post(API_URL, headers=headers, json=payload)
-        response.raise_for_status() # Проверка на ошибки HTTP
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
+        response.raise_for_status()
         data = response.json()
         ai_reply = data["choices"][0]["message"]["content"]
-
-        # Сохраняем ответ Мику в историю
         chat_histories[user_id].append({"role": "assistant", "content": ai_reply})
         return ai_reply
-
     except Exception as e:
         print(f"Ошибка API: {e}")
         return "ой, кажется, я немного задумалась... (ошибка соединения)"
 
-# Инициализация бота
-bot = telebot.TeleBot(BOT_TOKEN)
+def run_bot():
+    bot = telebot.TeleBot(BOT_TOKEN)
 
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    bot.reply_to(message, "привет, Дамиль. я тут. как ты? 🎧")
+    @bot.message_handler(commands=['start'])
+    def send_welcome(message):
+        bot.reply_to(message, "привет, Дамиль. я тут. как ты? 🎧")
 
-@bot.message_handler(func=lambda message: True)
-def handle_message(message):
-    # Показываем статус "печатает..."
-    bot.send_chat_action(message.chat.id, 'typing')
-    
-    user_message = message.text
-    ai_reply = get_ai_response(message.chat.id, user_message)
-    
-    # Отправляем ответ
-    bot.send_message(message.chat.id, ai_reply)
+    @bot.message_handler(func=lambda message: True)
+    def handle_message(message):
+        bot.send_chat_action(message.chat.id, 'typing')
+        ai_reply = get_ai_response(message.chat.id, message.text)
+        bot.send_message(message.chat.id, ai_reply)
 
-if __name__ == "__main__":
-    print("мику бот запущен... 🎧")
-    # Запускаем бота в бесконечном цикле
+    print("🎧 мику бот запущен в фоне...")
     bot.polling(none_stop=True)
+
+# ==========================================
+# ЗАПУСК: Flask + бот в отдельном потоке
+# ==========================================
+if __name__ == "__main__":
+    # Запускаем бота в отдельном потоке
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+
+    # Flask слушает порт для Render
+    print(f"🌐 Flask слушает порт {PORT}...")
+    app.run(host="0.0.0.0", port=PORT)
