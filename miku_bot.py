@@ -1,25 +1,28 @@
 import os
+import sys
+import threading
 import telebot
 import requests
 from flask import Flask
 
-# 1. Забираем ключи из настроек Render
+# ==========================================
+# 1. ПРОВЕРКА ПЕРЕМЕННЫХ ОКРУЖЕНИЯ
+# ==========================================
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 API_KEY = os.environ.get("API_KEY")
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 PORT = int(os.environ.get("PORT", 10000))
 
-# 2. Проверка: если ключей нет, код сразу об этом скажет
 if not BOT_TOKEN or not API_KEY:
-    raise ValueError("❌ ОШИБКА: BOT_TOKEN или API_KEY не найдены в настройках Render!")
+    print("❌ ОШИБКА: BOT_TOKEN или API_KEY не найдены в настройках Render!")
+    sys.exit(1)
 
 print("✅ Ключи успешно получены из Render!")
 
 # ==========================================
-# 3. ПРОМПТ ДЛЯ МИКУ (оставляем как было)
+# 2. ПРОМПТ ДЛЯ МИКУ
 # ==========================================
-SYSTEM_PROMPT = """
-Ты — Мику Накано. Ты переписываешься в Telegram со своим другом Дамилем (14 лет).
+SYSTEM_PROMPT = """Ты — Мику Накано. Ты переписываешься в Telegram со своим другом Дамилем (14 лет).
 ПРАВИЛА:
 1. Пиши как обычный человек в мессенджере. Короткие сообщения, строчные буквы.
 2. ЗАПРЕЩЕНО использовать звёздочки (*), описания действий, кавычки вокруг реплик.
@@ -27,12 +30,11 @@ SYSTEM_PROMPT = """
 4. Ты помогаешь с химией и биологией, объясняешь просто.
 5. Ты тихая, вдумчивая, эмпатичная.
 6. Максимум 1-2 мягких эмодзи на сообщение (🌿, 🎧, ☕).
-7. Никогда не ломай четвёртую стену и не говори, что ты ИИ.
-"""
+7. Никогда не ломай четвёртую стену и не говори, что ты ИИ."""
 
-# ... ДАЛЕЕ ИДЕТ ВЕСЬ ТВОЙ ОСТАЛЬНОЙ КОД (chat_histories, get_ai_response, bot = telebot.TeleBot(BOT_TOKEN) и т.д.) ...
-"""
-
+# ==========================================
+# 3. ЛОГИКА БОТА
+# ==========================================
 chat_histories = {}
 
 def get_ai_response(user_id, user_message):
@@ -48,7 +50,7 @@ def get_ai_response(user_id, user_message):
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json"
     }
-
+    
     payload = {
         "model": "llama3-8b-8192",
         "messages": chat_histories[user_id],
@@ -66,9 +68,6 @@ def get_ai_response(user_id, user_message):
         print(f"Ошибка API: {e}")
         return "ой, кажется, я немного задумалась... (ошибка соединения)"
 
-# ==========================================
-# ЛОГИКА БОТА
-# ==========================================
 def run_bot():
     bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -86,7 +85,7 @@ def run_bot():
     bot.polling(none_stop=True)
 
 # ==========================================
-# FLASK ДЛЯ RENDER
+# 4. ВЕБ-СЕРВЕР ДЛЯ RENDER (чтобы не падал)
 # ==========================================
 app = Flask(__name__)
 
@@ -99,11 +98,11 @@ def health():
     return "ok", 200
 
 # ==========================================
-# ЗАПУСК
+# 5. ЗАПУСК
 # ==========================================
 if __name__ == "__main__":
     bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
-
-    print(f"🌐 Flask слушает порт {PORT}...")
+    
+    print(f"🌐 Запускаем веб-сервер на порту {PORT} для Render...")
     app.run(host="0.0.0.0", port=PORT)
