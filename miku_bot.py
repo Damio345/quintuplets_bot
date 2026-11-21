@@ -1,10 +1,13 @@
 import telebot
 import requests
+import os # <-- Добавь это
 
-# --- НАСТРОЙКИ (СЮДА ВСТАВИШЬ СВОИ КЛЮЧИ) ---
-BOT_TOKEN = "9202865214:AAGBXvlkJ50mRXSRkhvi_CdX0Iuwf-Gl0uU"
-API_KEY = "sk-nplvfcwayjwuiapnhvlfzqamxaltuseccbplnarhiotlsrac" # Или OpenRouter
-API_URL = "https://api.groq.com/openai/v1/chat/completions"
+# Render сам подставит ключи из настроек
+BOT_TOKEN = os.environ.get("9202865214:AAGBXvlkJ50mRXSRkhvi_CdX0Iuwf-Gl0uU")
+API_KEY = os.environ.get("sk-nplvfcwayjwuiapnhvlfzqamxaltuseccbplnarhiotlsrac")
+API_URL = "https://api.groq.com/openai/v1/chat/completions" # Или твой URL
+
+# ... дальше весь твой код без изменений ...
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
