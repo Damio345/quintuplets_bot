@@ -5,17 +5,64 @@ import telebot
 import requests
 from flask import Flask
 
-# 1. Получаем переменные окружения
-BOT_TOKEN = os.environ.get("9202865214:AAGBXvlkJ50mRXSRkhvi_CdX0Iuwf-Gl0uU")
-API_KEY = os.environ.get("sk-nplvfcwayjwuiapnhvlfzqamxaltuseccbplnarhiotlsrac")
-API_URL = "https://api.groq.com/openai/v1/chat/completions"
-PORT = int(os.environ.get("PORT", 10000)) # Render передаст порт сюда
+# ==========================================
+# ДИАГНОСТИКА: ПОКАЗЫВАЕМ ВСЕ ПЕРЕМЕННЫЕ
+# ==========================================
+print("=" * 60)
+print("🔍 ДИАГНОСТИКА ПЕРЕМЕННЫХ ОКРУЖЕНИЯ")
+print("=" * 60)
 
+# Показываем все имена переменных (без значений!)
+all_keys = sorted(os.environ.keys())
+print(f"📋 Всего переменных: {len(all_keys)}")
+print("Список ключей:")
+for key in all_keys:
+    print(f"  - {key}")
+
+print("=" * 60)
+
+# Проверяем наши ключи
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+API_KEY = os.environ.get("API_KEY")
+
+print(f"🔑 BOT_TOKEN найден: {BOT_TOKEN is not None}")
+if BOT_TOKEN:
+    print(f"   Длина: {len(BOT_TOKEN)} символов")
+    print(f"   Начинается с: {BOT_TOKEN[:10]}...")
+else:
+    print("   ⚠️  ЗНАЧЕНИЕ: None (переменная не задана!)")
+
+print(f"🔑 API_KEY найден: {API_KEY is not None}")
+if API_KEY:
+    print(f"   Длина: {len(API_KEY)} символов")
+    print(f"   Начинается с: {API_KEY[:10]}...")
+else:
+    print("   ⚠️  ЗНАЧЕНИЕ: None (переменная не задана!)")
+
+print("=" * 60)
+
+# Если ключей нет - останавливаемся с понятной ошибкой
 if not BOT_TOKEN or not API_KEY:
-    print("❌ ОШИБКА: BOT_TOKEN и API_KEY не найдены!")
+    print("❌ ОШИБКА: Один или оба ключа не найдены!")
+    print("👉 Проверь в Render: Dashboard → твой сервис → Environment")
+    print("👉 Должны быть переменные с ИМЕНАМИ:")
+    print("   - BOT_TOKEN (значение: токен от @BotFather)")
+    print("   - API_KEY (значение: ключ от Groq)")
+    print("⚠️  Имена должны быть ТОЧНО такими, с заглавными буквами!")
     sys.exit(1)
 
-# 2. Промпт Мику
+print("✅ Оба ключа найдены! Запускаем бота...")
+print("=" * 60)
+
+# ==========================================
+# НАСТРОЙКИ
+# ==========================================
+API_URL = os.environ.get("API_URL", "https://api.groq.com/openai/v1/chat/completions")
+PORT = int(os.environ.get("PORT", 10000))
+
+# ==========================================
+# ПРОМПТ МИКУ
+# ==========================================
 SYSTEM_PROMPT = """
 Ты — Мику Накано. Ты переписываешься в Telegram со своим другом Дамилем (14 лет).
 ПРАВИЛА:
@@ -33,32 +80,40 @@ chat_histories = {}
 def get_ai_response(user_id, user_message):
     if user_id not in chat_histories:
         chat_histories[user_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
+
     chat_histories[user_id].append({"role": "user", "content": user_message})
+
     if len(chat_histories[user_id]) > 12:
         chat_histories[user_id] = [chat_histories[user_id][0]] + chat_histories[user_id][-10:]
 
-    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
-    payload = {"model": "llama3-8b-8192", "messages": chat_histories[user_id], "temperature": 0.7}
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": "llama3-8b-8192",
+        "messages": chat_histories[user_id],
+        "temperature": 0.7
+    }
 
     try:
         response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
         response.raise_for_status()
-        ai_reply = response.json()["choices"][0]["message"]["content"]
+        data = response.json()
+        ai_reply = data["choices"][0]["message"]["content"]
         chat_histories[user_id].append({"role": "assistant", "content": ai_reply})
         return ai_reply
     except Exception as e:
         print(f"Ошибка API: {e}")
         return "ой, кажется, я немного задумалась... (ошибка соединения)"
 
-# 3. Крошечный веб-сервер, чтобы Render был доволен и видел открытый порт
-app = Flask(__name__)
-@app.route("/")
-def home():
-    return "Мику бот жив и работает! 🎧"
-
-# 4. Логика бота
+# ==========================================
+# ЛОГИКА БОТА
+# ==========================================
 def run_bot():
     bot = telebot.TeleBot(BOT_TOKEN)
+
     @bot.message_handler(commands=['start'])
     def send_welcome(message):
         bot.reply_to(message, "привет, Дамиль. я тут. как ты? 🎧")
@@ -72,8 +127,25 @@ def run_bot():
     print("🎧 Мику бот запущен в фоновом потоке...")
     bot.polling(none_stop=True)
 
-# 5. Запуск: бот в фоне, Flask слушает порт Render
+# ==========================================
+# FLASK ДЛЯ RENDER
+# ==========================================
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Мику бот жив и работает! 🎧"
+
+@app.route('/health')
+def health():
+    return "ok", 200
+
+# ==========================================
+# ЗАПУСК
+# ==========================================
 if __name__ == "__main__":
-    threading.Thread(target=run_bot, daemon=True).start()
-    print(f"🌐 Запускаем веб-сервер на порту {PORT} для Render...")
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+
+    print(f"🌐 Flask слушает порт {PORT}...")
     app.run(host="0.0.0.0", port=PORT)
