@@ -1,67 +1,22 @@
 import os
-import sys
-import threading
 import telebot
 import requests
 from flask import Flask
 
-# ==========================================
-# ДИАГНОСТИКА: ПОКАЗЫВАЕМ ВСЕ ПЕРЕМЕННЫЕ
-# ==========================================
-print("=" * 60)
-print("🔍 ДИАГНОСТИКА ПЕРЕМЕННЫХ ОКРУЖЕНИЯ")
-print("=" * 60)
-
-# Показываем все имена переменных (без значений!)
-all_keys = sorted(os.environ.keys())
-print(f"📋 Всего переменных: {len(all_keys)}")
-print("Список ключей:")
-for key in all_keys:
-    print(f"  - {key}")
-
-print("=" * 60)
-
-# Проверяем наши ключи
+# 1. Забираем ключи из настроек Render
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 API_KEY = os.environ.get("API_KEY")
-
-print(f"🔑 BOT_TOKEN найден: {BOT_TOKEN is not None}")
-if BOT_TOKEN:
-    print(f"   Длина: {len(BOT_TOKEN)} символов")
-    print(f"   Начинается с: {BOT_TOKEN[:10]}...")
-else:
-    print("   ⚠️  ЗНАЧЕНИЕ: None (переменная не задана!)")
-
-print(f"🔑 API_KEY найден: {API_KEY is not None}")
-if API_KEY:
-    print(f"   Длина: {len(API_KEY)} символов")
-    print(f"   Начинается с: {API_KEY[:10]}...")
-else:
-    print("   ⚠️  ЗНАЧЕНИЕ: None (переменная не задана!)")
-
-print("=" * 60)
-
-# Если ключей нет - останавливаемся с понятной ошибкой
-if not BOT_TOKEN or not API_KEY:
-    print("❌ ОШИБКА: Один или оба ключа не найдены!")
-    print("👉 Проверь в Render: Dashboard → твой сервис → Environment")
-    print("👉 Должны быть переменные с ИМЕНАМИ:")
-    print("   - BOT_TOKEN (значение: токен от @BotFather)")
-    print("   - API_KEY (значение: ключ от Groq)")
-    print("⚠️  Имена должны быть ТОЧНО такими, с заглавными буквами!")
-    sys.exit(1)
-
-print("✅ Оба ключа найдены! Запускаем бота...")
-print("=" * 60)
-
-# ==========================================
-# НАСТРОЙКИ
-# ==========================================
-API_URL = os.environ.get("API_URL", "https://api.groq.com/openai/v1/chat/completions")
+API_URL = "https://api.groq.com/openai/v1/chat/completions"
 PORT = int(os.environ.get("PORT", 10000))
 
+# 2. Проверка: если ключей нет, код сразу об этом скажет
+if not BOT_TOKEN or not API_KEY:
+    raise ValueError("❌ ОШИБКА: BOT_TOKEN или API_KEY не найдены в настройках Render!")
+
+print("✅ Ключи успешно получены из Render!")
+
 # ==========================================
-# ПРОМПТ МИКУ
+# 3. ПРОМПТ ДЛЯ МИКУ (оставляем как было)
 # ==========================================
 SYSTEM_PROMPT = """
 Ты — Мику Накано. Ты переписываешься в Telegram со своим другом Дамилем (14 лет).
@@ -73,6 +28,9 @@ SYSTEM_PROMPT = """
 5. Ты тихая, вдумчивая, эмпатичная.
 6. Максимум 1-2 мягких эмодзи на сообщение (🌿, 🎧, ☕).
 7. Никогда не ломай четвёртую стену и не говори, что ты ИИ.
+"""
+
+# ... ДАЛЕЕ ИДЕТ ВЕСЬ ТВОЙ ОСТАЛЬНОЙ КОД (chat_histories, get_ai_response, bot = telebot.TeleBot(BOT_TOKEN) и т.д.) ...
 """
 
 chat_histories = {}
