@@ -5,23 +5,19 @@ import telebot
 import requests
 from flask import Flask
 
-# ==========================================
-# НАСТРОЙКИ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ RENDER
-# ==========================================
+# 1. Получаем переменные окружения
 BOT_TOKEN = os.environ.get("9202865214:AAGBXvlkJ50mRXSRkhvi_CdX0Iuwf-Gl0uU")
-API_KEY = os.environ.get("sk-nplvfcwayjwuiapnhvlfzqamxaltuseccbplnarhiotlsrac")  # Ключ от Groq или OpenRouter
-API_URL = os.environ.get("API_URL", "https://api.groq.com/openai/v1/chat/completions")
-MODEL = os.environ.get("MODEL", "llama3-8b-8192")
-PORT = int(os.environ.get("PORT", 8000))
+API_KEY = os.environ.get("sk-nplvfcwayjwuiapnhvlfzqamxaltuseccbplnarhiotlsrac")
+API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-# Проверка ключей
+# ВАЖНО: Render передаёт нужный порт в переменной PORT. Берем его или 10000 по умолчанию.
+PORT = int(os.environ.get("PORT", 10000))
+
 if not BOT_TOKEN or not API_KEY:
-    print("❌ ОШИБКА: BOT_TOKEN и API_KEY должны быть заданы в Environment Variables на Render!")
+    print("❌ ОШИБКА: BOT_TOKEN и API_KEY не найдены в переменных окружения!")
     sys.exit(1)
 
-# ==========================================
-# ПРОМПТ МИКУ
-# ==========================================
+# 2. Промпт Мику
 SYSTEM_PROMPT = """
 Ты — Мику Накано. Ты переписываешься в Telegram со своим другом Дамилем (14 лет).
 ПРАВИЛА:
@@ -34,32 +30,14 @@ SYSTEM_PROMPT = """
 7. Никогда не ломай четвёртую стену и не говори, что ты ИИ.
 """
 
-# Хранилище истории диалогов
 chat_histories = {}
 
-# ==========================================
-# ФЛАКС-СЕРВЕР ДЛЯ RENDER (health-check)
-# ==========================================
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "мику бот жив 🎧"
-
-@app.route("/health")
-def health():
-    return "ok"
-
-# ==========================================
-# ЛОГИКА БОТА
-# ==========================================
 def get_ai_response(user_id, user_message):
     if user_id not in chat_histories:
         chat_histories[user_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
 
     chat_histories[user_id].append({"role": "user", "content": user_message})
 
-    # Ограничиваем историю (системный промпт + последние 10 сообщений)
     if len(chat_histories[user_id]) > 12:
         chat_histories[user_id] = [chat_histories[user_id][0]] + chat_histories[user_id][-10:]
 
@@ -67,9 +45,9 @@ def get_ai_response(user_id, user_message):
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json"
     }
-
+    
     payload = {
-        "model": MODEL,
+        "model": "llama3-8b-8192",
         "messages": chat_histories[user_id],
         "temperature": 0.7
     }
@@ -85,6 +63,14 @@ def get_ai_response(user_id, user_message):
         print(f"Ошибка API: {e}")
         return "ой, кажется, я немного задумалась... (ошибка соединения)"
 
+# 3. Создаем крошечный веб-сервер, чтобы Render был доволен
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Мику бот жив и работает! 🎧"
+
+# 4. Логика бота в отдельной функции
 def run_bot():
     bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -98,17 +84,11 @@ def run_bot():
         ai_reply = get_ai_response(message.chat.id, message.text)
         bot.send_message(message.chat.id, ai_reply)
 
-    print("🎧 мику бот запущен в фоне...")
+    print("🎧 Мику бот запущен в фоновом потоке...")
     bot.polling(none_stop=True)
 
-# ==========================================
-# ЗАПУСК: Flask + бот в отдельном потоке
-# ==========================================
+# 5. Запуск: бот в фоне, Flask на главном потоке слушает порт Render
 if __name__ == "__main__":
-    # Запускаем бота в отдельном потоке
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-
-    # Flask слушает порт для Render
-    print(f"🌐 Flask слушает порт {PORT}...")
+    threading.Thread(target=run_bot, daemon=True).start()
+    print(f"🌐 Запускаем веб-сервер на порту {PORT} для Render...")
     app.run(host="0.0.0.0", port=PORT)
