@@ -32,13 +32,13 @@ SYSTEM_PROMPT = """Ты — Мику Накано. Ты переписываеш
 chat_histories = {}
 
 # ==========================================
-# 3. НАСТРОЙКИ SILICONFLOW (ТВОЙ КЛЮЧ)
+# 3. НАСТРОЙКИ GROQ (ТВОЙ КЛЮЧ)
 # ==========================================
 PROVIDERS = [
     {
-        "name": "SiliconFlow",
-        "url": "https://api.siliconflow.cn/v1/chat/completions",
-        "model": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+        "name": "Groq",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "model": "llama-3.1-8b-instant",
         "headers": lambda key: {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     }
 ]
