@@ -32,13 +32,13 @@ SYSTEM_PROMPT = """Ты — Мику Накано. Ты переписываеш
 chat_histories = {}
 
 # ==========================================
-# 3. НАСТРОЙКИ GROQ (ТВОЙ КЛЮЧ)
+# 3. НАСТРОЙКИ GROQ (СТАБИЛЬНАЯ МОДЕЛЬ)
 # ==========================================
 PROVIDERS = [
     {
         "name": "Groq",
         "url": "https://api.groq.com/openai/v1/chat/completions",
-        "model": "llama-3.1-8b-instant",
+        "model": "llama3-8b-8192",
         "headers": lambda key: {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     }
 ]
