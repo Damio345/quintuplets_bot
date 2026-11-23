@@ -5,9 +5,6 @@ import telebot
 import requests
 from flask import Flask
 
-# ==========================================
-# 1. ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ
-# ==========================================
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 API_KEY = os.environ.get("API_KEY")
 PORT = int(os.environ.get("PORT", 10000))
@@ -16,9 +13,6 @@ if not BOT_TOKEN or not API_KEY:
     print("❌ Нет ключей в настройках Render!")
     sys.exit(1)
 
-# ==========================================
-# 2. ПРОМПТ МИКУ
-# ==========================================
 SYSTEM_PROMPT = """Ты — Мику Накано. Ты переписываешься в Telegram со своим другом Дамилем (14 лет).
 ПРАВИЛА:
 1. Пиши как обычный человек в мессенджере. Короткие сообщения, строчные буквы.
@@ -31,54 +25,41 @@ SYSTEM_PROMPT = """Ты — Мику Накано. Ты переписываеш
 
 chat_histories = {}
 
-# ==========================================
-# 3. НАСТРОЙКИ GROQ (СТАБИЛЬНАЯ МОДЕЛЬ)
-# ==========================================
-PROVIDERS = [
-    {
-        "name": "Groq",
-        "url": "https://api.groq.com/openai/v1/chat/completions",
-        "model": "llama3-8b-8192",
-        "headers": lambda key: {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-    }
+# ЦЕПОЧКА МОДЕЛЕЙ: бот сам переберёт их, пока не найдёт живую
+MODELS = [
+    "llama-3.3-70b-versatile",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "qwen/qwen3-32b",
 ]
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 def get_ai_response(user_id, user_message):
     if user_id not in chat_histories:
         chat_histories[user_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
-    
     chat_histories[user_id].append({"role": "user", "content": user_message})
-    
-    # Храним только последние 10 сообщений + системный промпт, чтобы не перегружать память
     if len(chat_histories[user_id]) > 12:
         chat_histories[user_id] = [chat_histories[user_id][0]] + chat_histories[user_id][-10:]
 
-    for provider in PROVIDERS:
+    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+
+    for model in MODELS:
         try:
-            headers = provider["headers"](API_KEY)
-            payload = {
-                "model": provider["model"],
-                "messages": chat_histories[user_id],
-                "temperature": 0.7
-            }
-            response = requests.post(provider["url"], headers=headers, json=payload, timeout=30)
-            
+            payload = {"model": model, "messages": chat_histories[user_id], "temperature": 0.7}
+            response = requests.post(GROQ_URL, headers=headers, json=payload, timeout=30)
             if response.status_code == 200:
-                data = response.json()
-                ai_reply = data["choices"][0]["message"]["content"]
+                ai_reply = response.json()["choices"][0]["message"]["content"]
                 chat_histories[user_id].append({"role": "assistant", "content": ai_reply})
                 return ai_reply
-            else:
-                # Если ошибка, бот сам напишет тебе точную причину в чат
-                return f"❌ Ошибка {provider['name']}: {response.status_code} — {response.text[:150]}"
-        except Exception as e:
+            # Если модель удалена/недоступна — молча пробуем следующую
+            if response.status_code in (400, 404):
+                continue
+            # Любая другая ошибка (ключ, лимит) — показываем
+            return f"❌ Groq {response.status_code}: {response.text[:150]}"
+        except Exception:
             continue
-    
-    return "❌ Не удалось получить ответ. Проверь ключ API_KEY в Render."
 
-# ==========================================
-# 4. ЛОГИКА БОТА
-# ==========================================
+    return "❌ Все модели недоступны. Проверь ключ API_KEY в Render."
+
 def run_bot():
     bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -98,9 +79,6 @@ def run_bot():
     print("🎧 Бот запущен")
     bot.polling(none_stop=True, skip_pending=True)
 
-# ==========================================
-# 5. ВЕБ-СЕРВЕР ДЛЯ RENDER
-# ==========================================
 app = Flask(__name__)
 
 @app.route('/')
@@ -111,9 +89,6 @@ def home():
 def health():
     return "ok", 200
 
-# ==========================================
-# 6. ЗАПУСК
-# ==========================================
 if __name__ == "__main__":
     threading.Thread(target=run_bot, daemon=True).start()
     print(f"🌐 Запускаем веб-сервер на порту {PORT}...")
